@@ -1,2 +1,2 @@
-# figma-plugin-component-specification
-figma插件，用于将组件的属性、属性值、token 转为 markdown 文档。
+# figma-plugin-theme-configurator
+figma插件，根据算法生成颜色、尺寸等主题变量
