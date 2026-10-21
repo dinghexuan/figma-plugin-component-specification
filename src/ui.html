@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>主题化配置器</title>
+  <!-- STYLES -->
+</head>
+<body>
+  <div class="app">
+    <nav class="tabs" role="tablist" aria-label="配置类型">
+      <button role="tab" data-tab="color" aria-selected="true" class="active">颜色</button>
+      <button role="tab" data-tab="size" aria-selected="false">尺寸</button>
+    </nav>
+    <div class="mode-wrap">
+      <div class="segmented" role="tablist" aria-label="颜色模式">
+        <button role="tab" data-mode="light" aria-selected="true" class="active">Light</button>
+        <button role="tab" data-mode="dark" aria-selected="false">Dark</button>
+      </div>
+    </div>
+    <main class="viewport" aria-label="主题变量配置">
+      <div class="panels"></div>
+      <footer>
+        <button class="cancel">取消</button><button class="generate primary" disabled>生成</button>
+      </footer>
+    </main>
+  </div>
+  <div class="notice" role="status" aria-live="polite" hidden></div>
+  <div class="picker" role="dialog" aria-label="颜色选择器" hidden>
+    <div class="color-square" tabindex="0" role="slider" aria-label="饱和度与亮度"><span class="square-handle"></span></div>
+    <div class="picker-sliders">
+      <div class="slider-stack">
+        <div class="hue-track"><input type="range" min="0" max="360" step="1" aria-label="色相"></div>
+        <div class="alpha-track"><input type="range" min="0" max="100" step="1" aria-label="透明度"></div>
+      </div>
+      <button class="eyedropper icon-button" aria-label="吸取屏幕颜色"><img src="assets/eyedropper.svg" alt=""></button>
+    </div>
+    <div class="picker-controls">
+      <div class="format-select"><select aria-label="颜色格式"><option>HSB</option><option>HSL</option><option>RGB</option><option>HEX</option></select><img src="assets/select-down.svg" alt=""></div>
+      <div class="channels"></div>
+    </div>
+  </div>
+  <template id="arrow-color"><img src="assets/arrow-color.svg" alt=""></template>
+  <template id="arrow-expanded"><img src="assets/arrow-expanded.svg" alt=""></template>
+  <template id="arrow-size"><img src="assets/arrow-size.svg" alt=""></template>
+  <!-- SCRIPTS -->
+</body>
+</html>

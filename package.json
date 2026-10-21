@@ -1,0 +1,17 @@
+{
+  "name": "figma-plugin-theme-configurator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "test": "node scripts/test.mjs",
+    "preview": "node scripts/preview.mjs"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.117.0",
+    "esbuild": "^0.25.12",
+    "jsdom": "^27.0.0",
+    "typescript": "^5.9.3"
+  }
+}

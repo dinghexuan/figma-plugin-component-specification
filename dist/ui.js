@@ -1,0 +1,1318 @@
+"use strict";
+(() => {
+  // src/palette-algorithm.js
+  var clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
+  var wrapHue = (hue2) => (hue2 % 360 + 360) % 360;
+  function normalizeHex(value) {
+    const normalized = value.trim().replace(/^#/, "");
+    if (/^[\da-f]{3}$/i.test(normalized)) {
+      return `#${normalized.split("").map((character) => character.repeat(2)).join("").toUpperCase()}`;
+    }
+    if (/^[\da-f]{6}$/i.test(normalized)) {
+      return `#${normalized.toUpperCase()}`;
+    }
+    return null;
+  }
+  function hexToRgb(hex) {
+    const normalized = normalizeHex(hex);
+    if (!normalized) {
+      throw new Error(`Invalid hex color: ${hex}`);
+    }
+    return {
+      r: Number.parseInt(normalized.slice(1, 3), 16),
+      g: Number.parseInt(normalized.slice(3, 5), 16),
+      b: Number.parseInt(normalized.slice(5, 7), 16)
+    };
+  }
+  function rgbToHex({ r, g, b }) {
+    return `#${[r, g, b].map(
+      (value) => Math.round(clamp(value, 0, 255)).toString(16).padStart(2, "0")
+    ).join("").toUpperCase()}`;
+  }
+  function rgbToHsv({ r, g, b }) {
+    const red = r / 255;
+    const green = g / 255;
+    const blue = b / 255;
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+    const delta = max - min;
+    let h = 0;
+    if (delta !== 0) {
+      if (max === red) h = 60 * ((green - blue) / delta % 6);
+      else if (max === green) h = 60 * ((blue - red) / delta + 2);
+      else h = 60 * ((red - green) / delta + 4);
+    }
+    return {
+      h: wrapHue(h),
+      s: max === 0 ? 0 : delta / max * 100,
+      v: max * 100
+    };
+  }
+  function hsvToRgb({ h, s, v }) {
+    const hue2 = wrapHue(h);
+    const saturation = clamp(s) / 100;
+    const value = clamp(v) / 100;
+    const chroma = value * saturation;
+    const x = chroma * (1 - Math.abs(hue2 / 60 % 2 - 1));
+    const m = value - chroma;
+    let rgb;
+    if (hue2 < 60) rgb = [chroma, x, 0];
+    else if (hue2 < 120) rgb = [x, chroma, 0];
+    else if (hue2 < 180) rgb = [0, chroma, x];
+    else if (hue2 < 240) rgb = [0, x, chroma];
+    else if (hue2 < 300) rgb = [x, 0, chroma];
+    else rgb = [chroma, 0, x];
+    return {
+      r: (rgb[0] + m) * 255,
+      g: (rgb[1] + m) * 255,
+      b: (rgb[2] + m) * 255
+    };
+  }
+  function rgbToHsl({ r, g, b }) {
+    const red = r / 255;
+    const green = g / 255;
+    const blue = b / 255;
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+    const delta = max - min;
+    const lightness = (max + min) / 2;
+    let h = 0;
+    if (delta !== 0) {
+      if (max === red) h = 60 * ((green - blue) / delta % 6);
+      else if (max === green) h = 60 * ((blue - red) / delta + 2);
+      else h = 60 * ((red - green) / delta + 4);
+    }
+    return {
+      h: wrapHue(h),
+      s: delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1)) * 100,
+      l: lightness * 100
+    };
+  }
+  function hslToRgb({ h, s, l }) {
+    const hue2 = wrapHue(h);
+    const saturation = clamp(s) / 100;
+    const lightness = clamp(l) / 100;
+    const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    const x = chroma * (1 - Math.abs(hue2 / 60 % 2 - 1));
+    const m = lightness - chroma / 2;
+    let rgb;
+    if (hue2 < 60) rgb = [chroma, x, 0];
+    else if (hue2 < 120) rgb = [x, chroma, 0];
+    else if (hue2 < 180) rgb = [0, chroma, x];
+    else if (hue2 < 240) rgb = [0, x, chroma];
+    else if (hue2 < 300) rgb = [x, 0, chroma];
+    else rgb = [chroma, 0, x];
+    return {
+      r: (rgb[0] + m) * 255,
+      g: (rgb[1] + m) * 255,
+      b: (rgb[2] + m) * 255
+    };
+  }
+  var hexToHsv = (hex) => rgbToHsv(hexToRgb(hex));
+  var hexToHsl = (hex) => rgbToHsl(hexToRgb(hex));
+  var hsvToHex = (color) => rgbToHex(hsvToRgb(color));
+  var hslToHex = (color) => rgbToHex(hslToRgb(color));
+  var adjustHsv = (color, changes) => ({
+    h: wrapHue(color.h + (changes.h ?? 0)),
+    s: clamp(color.s + (changes.s ?? 0)),
+    v: clamp(color.v + (changes.v ?? 0))
+  });
+  var adjustHsl = (color, changes) => ({
+    h: wrapHue(color.h + (changes.h ?? 0)),
+    s: clamp(color.s + (changes.s ?? 0)),
+    l: clamp(color.l + (changes.l ?? 0))
+  });
+  function toPalette(colors) {
+    return Array.from({ length: 13 }, (_, position) => {
+      const index = position + 1;
+      return { name: `color-${index}`, index, hex: colors[index] };
+    });
+  }
+  function toHslPalette(colors) {
+    return Array.from({ length: 13 }, (_, position) => {
+      const index = position + 1;
+      const hsl = { ...colors[index] };
+      return { name: `color-${index}`, index, hex: hslToHex(hsl), hsl };
+    });
+  }
+  function toHsvPalette(colors) {
+    return Array.from({ length: 13 }, (_, position) => {
+      const index = position + 1;
+      const hsv = { ...colors[index] };
+      return { name: `color-${index}`, index, hex: hsvToHex(hsv), hsv };
+    });
+  }
+  function generateNeutralLight(baseHex, baseHsl) {
+    const base = baseHsl ? adjustHsl(baseHsl, {}) : hexToHsl(baseHex);
+    const colors = { 13: base };
+    const steps = {
+      12: { s: -2, l: 8 },
+      11: { s: -2, l: 4 },
+      10: { s: -2, l: 3 },
+      9: { s: -2, l: 10 },
+      8: { s: -2, l: 9 },
+      7: { s: -2, l: 18 },
+      6: { s: 4, l: 14 }
+    };
+    for (let index = 12; index >= 6; index -= 1) {
+      colors[index] = adjustHsl(colors[index + 1], steps[index]);
+    }
+    const fixedLightness = base.l <= 5 ? [83, 89, 92, 94] : base.l <= 10 ? [86, 92, 95, 97] : base.l <= 15 ? [88, 93, 96, 98] : base.l <= 20 ? [92, 96, 96, 98] : null;
+    if (fixedLightness) {
+      for (const [position, index] of [5, 4, 3, 2].entries()) {
+        colors[index] = {
+          ...adjustHsl(colors[index + 1], { s: 4 }),
+          l: fixedLightness[position]
+        };
+      }
+    } else {
+      const lightnessSteps = {
+        5: 6,
+        4: 4,
+        3: 2,
+        2: 2
+      };
+      for (let index = 5; index >= 2; index -= 1) {
+        colors[index] = adjustHsl(colors[index + 1], {
+          s: 4,
+          l: lightnessSteps[index]
+        });
+      }
+    }
+    colors[1] = { h: base.h, s: 0, l: 100 };
+    return toHslPalette(colors);
+  }
+  function generateNeutralDark(baseHex, baseHsl) {
+    const base = baseHsl ? adjustHsl(baseHsl, {}) : hexToHsl(baseHex);
+    const isMiddleHue = base.h >= 24 && base.h <= 204;
+    const colors = { 13: base };
+    const earlyLightness = isMiddleHue ? [3, 3] : [4, 4];
+    const steps = {
+      12: { s: 0, l: earlyLightness[0] },
+      11: { s: 0, l: earlyLightness[1] },
+      10: { s: -2, l: 4 },
+      9: { s: -2, l: 3 },
+      8: { s: isMiddleHue ? -6 : -2, l: isMiddleHue ? 10 : 12 },
+      7: { s: -2, l: 10 },
+      6: { s: 2, l: 20 }
+    };
+    for (let index = 12; index >= 6; index -= 1) {
+      colors[index] = adjustHsl(colors[index + 1], steps[index]);
+    }
+    const fixedLightness = base.l <= 5 ? [80, 86, 90, 94] : base.l <= 10 ? [82, 88, 92, 96] : base.l <= 15 ? [84, 90, 94, 98] : base.l <= 20 ? [86, 92, 96, 98] : null;
+    const lightnessSteps = {
+      5: 10,
+      4: 6,
+      3: 4,
+      2: 2
+    };
+    for (const [position, index] of [5, 4, 3, 2].entries()) {
+      const next = adjustHsl(colors[index + 1], {
+        s: index === 5 && !isMiddleHue ? 6 : 4,
+        l: fixedLightness ? 0 : lightnessSteps[index]
+      });
+      colors[index] = fixedLightness ? { ...next, l: fixedLightness[position] } : next;
+    }
+    colors[1] = { h: base.h, s: 0, l: 100 };
+    return toHslPalette(colors);
+  }
+  function brandLightSaturationRamp(baseSaturation) {
+    if (baseSaturation >= 96) return [24, 16, 10, 6];
+    if (baseSaturation >= 91) return [20, 14, 8, 4];
+    if (baseSaturation >= 86) return [16, 12, 8, 4];
+    if (baseSaturation >= 81) return [12, 10, 6, 4];
+    if (baseSaturation >= 70) return [10, 8, 6, 4];
+    return [8, 6, 4, 2];
+  }
+  function generateBrandLight(baseHex) {
+    const base = rgbToHsv(hexToRgb(baseHex));
+    const isMiddleHue = base.h >= 60 && base.h <= 240;
+    const darkHueStep = isMiddleHue ? 2 : -2;
+    const lightHueStep = -darkHueStep;
+    const colors = { 9: base };
+    for (let index = 10; index <= 13; index += 1) {
+      colors[index] = adjustHsv(colors[index - 1], {
+        h: darkHueStep,
+        v: -15
+      });
+    }
+    for (let index = 8; index >= 6; index -= 1) {
+      colors[index] = adjustHsv(colors[index + 1], {
+        h: lightHueStep,
+        s: -16,
+        v: 4
+      });
+    }
+    colors[5] = adjustHsv(colors[6], {
+      h: lightHueStep,
+      s: base.s < 65 ? -4 : -16,
+      v: 4
+    });
+    if (base.s >= 65) colors[5].s = Math.max(14, colors[5].s);
+    if (base.s < 65) {
+      colors[4] = adjustHsv(colors[5], { h: lightHueStep, s: -4, v: 3 });
+      colors[3] = adjustHsv(colors[4], { s: -2, v: 3 });
+      colors[2] = adjustHsv(colors[3], { s: -2, v: 3 });
+      colors[1] = adjustHsv(colors[2], { s: -2, v: 3 });
+    } else {
+      const saturationRamp = brandLightSaturationRamp(base.s);
+      colors[4] = {
+        ...adjustHsv(colors[5], { h: lightHueStep, v: 3 }),
+        s: saturationRamp[0]
+      };
+      colors[3] = {
+        ...adjustHsv(colors[4], { v: 3 }),
+        s: saturationRamp[1]
+      };
+      colors[2] = {
+        ...adjustHsv(colors[3], { v: 3 }),
+        s: saturationRamp[2]
+      };
+      colors[1] = {
+        ...adjustHsv(colors[2], { v: 3 }),
+        s: saturationRamp[3]
+      };
+    }
+    return toHsvPalette(colors);
+  }
+  function blend(foreground, background, alpha2) {
+    const front = hexToRgb(foreground);
+    const back = hexToRgb(background);
+    return rgbToHex({
+      r: front.r * alpha2 + back.r * (1 - alpha2),
+      g: front.g * alpha2 + back.g * (1 - alpha2),
+      b: front.b * alpha2 + back.b * (1 - alpha2)
+    });
+  }
+  function generateBrandDark(brandHex, neutralBaseHex) {
+    const light = Object.fromEntries(
+      generateBrandLight(brandHex).map((color) => [color.index, color.hex])
+    );
+    const composition = {
+      13: { source: 5, alpha: 0.98 },
+      12: { source: 6, alpha: 0.97 },
+      11: { source: 7, alpha: 0.95 },
+      10: { source: 8, alpha: 0.9 },
+      9: { source: 9, alpha: 0.85 },
+      8: { source: 9, alpha: 0.65 },
+      7: { source: 9, alpha: 0.45 },
+      6: { source: 9, alpha: 0.3 },
+      5: { source: 10, alpha: 0.25 },
+      4: { source: 10, alpha: 0.2 },
+      3: { source: 11, alpha: 0.15 },
+      2: { source: 12, alpha: 0.1 },
+      1: { source: 13, alpha: 0.05 }
+    };
+    const colors = Object.fromEntries(
+      Object.entries(composition).map(([index, { source, alpha: alpha2 }]) => [
+        index,
+        blend(light[source], neutralBaseHex, alpha2)
+      ])
+    );
+    return toPalette(colors);
+  }
+  function generatePalette(kind, mode2, brandHex, neutralHex, neutralHsl) {
+    if (kind === "neutral") {
+      return mode2 === "light" ? generateNeutralLight(neutralHex, neutralHsl) : generateNeutralDark(neutralHex, neutralHsl);
+    }
+    return mode2 === "light" ? generateBrandLight(brandHex) : generateBrandDark(brandHex, neutralHex);
+  }
+
+  // src/model.ts
+  var families = [
+    { id: "primary", label: "\u54C1\u724C\u8272", default: "#FF6000" },
+    { id: "gray", label: "\u4E2D\u6027\u8272", default: "#0F131A" },
+    { id: "success", label: "\u6210\u529F\u8272", default: "#00B23C" },
+    { id: "error", label: "\u9519\u8BEF\u8272", default: "#ED182A" },
+    { id: "warning", label: "\u8B66\u544A\u8272", default: "#E68200" }
+  ];
+  var sizeGroups = [
+    { id: "font-size", label: "\u5B57\u53F7\u57FA\u51C6\u503C", base: "font-size-md" },
+    { id: "icon-size", label: "\u56FE\u6807\u5C3A\u5BF8\u57FA\u51C6\u503C", base: "icon-size-md" },
+    { id: "font-weight", label: "\u5B57\u91CD\u57FA\u51C6\u503C", base: "font-weight-regular" },
+    { id: "radius", label: "\u5706\u89D2\u57FA\u51C6\u503C", base: "radius-md" },
+    { id: "control-height", label: "\u7EC4\u4EF6\u5C3A\u5BF8\u57FA\u51C6\u503C", base: "control-height-md" },
+    { id: "border", label: "\u63CF\u8FB9\u7C97\u7EC6", base: "border-width" },
+    { id: "padding", label: "\u95F4\u8DDD", base: "size-unit / size-step" }
+  ];
+  function defaults() {
+    const colors = () => Object.fromEntries(families.map((f) => [f.id, f.default]));
+    return {
+      version: 1,
+      colors: { light: colors(), dark: colors() },
+      sizes: { fontSize: 14, fontWeight: 400, radius: 8, controlHeight: 32, border: 1, sizeUnit: 4, sizeStep: 4, iconOverride: null },
+      overrides: {}
+    };
+  }
+  function cloneSettings(settings) {
+    return {
+      ...settings,
+      colors: { light: { ...settings.colors.light }, dark: { ...settings.colors.dark } },
+      sizes: { ...settings.sizes },
+      overrides: { ...settings.overrides }
+    };
+  }
+  function normalizeColor(input2) {
+    const result = normalizeHex(input2);
+    if (result) return result;
+    const raw = input2.trim().replace(/^#/, "");
+    if (/^[\da-f]{8}$/i.test(raw)) {
+      return `#${raw.slice(0, 6).toUpperCase()}${raw.slice(6).toUpperCase() === "FF" ? "" : raw.slice(6).toUpperCase()}`;
+    }
+    throw new Error("\u8BF7\u8F93\u5165\u6709\u6548\u7684 HEX \u8272\u503C\uFF0C\u4F8B\u5982 #FF6000 \u6216 FF6000\u3002");
+  }
+  function channels(hex) {
+    const color = normalizeColor(hex);
+    return [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16), color.length === 9 ? parseInt(color.slice(7), 16) / 255 : 1];
+  }
+  function fromChannels(r, g, b, alpha2 = 1) {
+    const hex = [r, g, b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+    return normalizeColor(`#${hex}${Math.round(Math.max(0, Math.min(1, alpha2)) * 255).toString(16).padStart(2, "0")}`);
+  }
+  function equal(a, b) {
+    return a === b;
+  }
+  function canonicalVariableName(name) {
+    return name.replace(/^(light|dark)\//i, (mode2) => mode2.toLowerCase());
+  }
+  function tokenId(collection, name) {
+    return `${collection}:${canonicalVariableName(name)}`;
+  }
+  var paletteCache = /* @__PURE__ */ new Map();
+  function tokens(settings, ignoreOverrides = false) {
+    const result = [];
+    const add = (collection, name, group, generated, base = false, mode2) => {
+      const id = tokenId(collection, name);
+      const override = ignoreOverrides ? void 0 : settings.overrides[id];
+      const value = override ?? generated;
+      result.push({ id, collection, name, label: name.replace(/^(light|dark)\//, "").replace(/\//g, "-"), group, mode: mode2, generated, value, base, modified: !equal(value, generated) });
+    };
+    for (const mode2 of ["light", "dark"]) {
+      for (const family of families) {
+        const key = `${mode2}:${family.id}`, seed = settings.colors[mode2][family.id];
+        const neutral = mode2 === "dark" && family.id !== "gray" ? settings.colors[mode2].gray : "";
+        let cached = paletteCache.get(key);
+        if (!cached || cached.seed !== seed || cached.neutral !== neutral) {
+          cached = { seed, neutral, palette: generatePalette(family.id === "gray" ? "neutral" : "brand", mode2, seed, settings.colors[mode2].gray) };
+          paletteCache.set(key, cached);
+        }
+        const palette = cached.palette;
+        for (const color of palette) {
+          add(
+            "\u68AF\u5EA6\u8272\u677F",
+            `${mode2}/color-${family.id}/${color.index}`,
+            family.id,
+            color.hex,
+            family.id === "gray" ? color.index === 13 : mode2 === "light" && color.index === 9,
+            mode2
+          );
+        }
+      }
+    }
+    const s = settings.sizes;
+    for (const [label, offset] of Object.entries({ "5xl": 18, "4xl": 14, "3xl": 10, "2xl": 6, xl: 4, lg: 2, md: 0, sm: -2, xs: -4 })) {
+      add("\u6587\u5B57", `font-size/${label}`, "font-size", s.fontSize + offset, label === "md");
+    }
+    for (const [label, offset] of Object.entries({ "2xl": 12, xl: 6, lg: 4, md: 4, sm: 2, xs: 0 })) {
+      add("\u5C3A\u5BF8", `icon-size/${label}`, "icon-size", s.fontSize + offset + (s.iconOverride === null ? 0 : s.iconOverride - s.fontSize - 4), label === "md");
+    }
+    for (const [label, offset] of Object.entries({ bold: 200, semibold: 100, medium: 50, regular: 0, light: -50 })) {
+      add("\u6587\u5B57", `font-weight/${label}`, "font-weight", s.fontWeight + offset, label === "regular");
+    }
+    add("radius", "infinite", "radius", 999);
+    for (const [label, offset] of Object.entries({ "4xl": 10, "3xl": 8, "2xl": 6, xl: 4, lg: 2, md: 0, sm: -2, xs: -4 })) {
+      add("radius", label, "radius", s.radius + offset, label === "md");
+    }
+    for (const [label, offset] of Object.entries({ "2xl": 16, xl: 8, lg: 4, md: 0, sm: -4, xs: -8 })) {
+      add("\u5C3A\u5BF8", `control-height/${label}`, "control-height", s.controlHeight + offset, label === "md");
+    }
+    add("\u5C3A\u5BF8", "border/width", "border", s.border, true);
+    add("\u5C3A\u5BF8", "size-unit", "seed", s.sizeUnit, true);
+    add("\u5C3A\u5BF8", "size-step", "seed", s.sizeStep, true);
+    for (const [label, n] of Object.entries({ "2xl": 6, xl: 5, lg: 4, md: 3, sm: 2, xs: 1, "2xs": 0 })) {
+      add("\u5C3A\u5BF8", `padding/${label}`, "padding", s.sizeUnit + s.sizeStep * n);
+    }
+    add("\u5C3A\u5BF8", "padding/3xs", "padding", Math.max(0, s.sizeUnit - 2));
+    return result;
+  }
+  function validateNumber(group, value, base = true) {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) throw new Error("\u8BF7\u8F93\u5165\u6709\u9650\u7684\u6574\u6570\u3002");
+    if (base && group === "font-size" && (value < 12 || value > 24 || value % 2)) throw new Error("\u5B57\u53F7\u57FA\u51C6\u503C\u5FC5\u987B\u4E3A 12\u201324 \u4E4B\u95F4\u7684\u5076\u6570\u3002");
+    if (base && group === "font-weight" && (value < 300 || value > 600)) throw new Error("\u5B57\u91CD\u57FA\u51C6\u503C\u5FC5\u987B\u4E3A 300\u2013600 \u4E4B\u95F4\u7684\u6574\u6570\u3002");
+    if (base && group === "radius" && (value < 0 || value > 99)) throw new Error("\u5706\u89D2\u57FA\u51C6\u503C\u5FC5\u987B\u4E3A 0\u201399 \u4E4B\u95F4\u7684\u6574\u6570\u3002");
+    if ((group === "control-height" || group === "icon-size") && base && value <= 0) throw new Error("\u5C3A\u5BF8\u57FA\u51C6\u503C\u5FC5\u987B\u4E3A\u6B63\u6574\u6570\u3002");
+    if (["border", "size-unit", "size-step", "padding"].includes(group) && value < 0) throw new Error("\u63CF\u8FB9\u3001\u57FA\u7840\u5355\u4F4D\u3001\u6B65\u957F\u548C\u95F4\u8DDD\u4E0D\u80FD\u4E3A\u8D1F\u6570\u3002");
+  }
+  var sizeKeys = {
+    "font-size": "fontSize",
+    "font-weight": "fontWeight",
+    radius: "radius",
+    "control-height": "controlHeight",
+    border: "border",
+    "size-unit": "sizeUnit",
+    "size-step": "sizeStep",
+    "icon-size": "iconOverride"
+  };
+  function apply(settings, action) {
+    if (action.type === "color-seed") {
+      if (!["light", "dark"].includes(action.mode) || !families.some((f) => f.id === action.family)) throw new Error("\u65E0\u6548\u7684\u989C\u8272\u5206\u7EC4\u3002");
+      const color = normalizeColor(action.value);
+      if (color.length === 9) throw new Error("\u989C\u8272\u57FA\u51C6\u503C\u4E0D\u652F\u6301\u900F\u660E\u5EA6\uFF0C\u8BF7\u8BBE\u4E3A 100%\u3002");
+      settings.colors[action.mode][action.family] = color;
+    } else if (action.type === "size-seed") {
+      if (action.group !== "padding" && !(action.group in sizeKeys)) throw new Error("\u65E0\u6548\u7684\u5C3A\u5BF8\u5206\u7EC4\u3002");
+      validateNumber(action.group, action.value);
+      if (action.group === "padding") throw new Error("\u8BF7\u5206\u522B\u8BBE\u7F6E size-unit \u548C size-step\u3002");
+      settings.sizes[sizeKeys[action.group]] = action.value;
+    } else if (action.type === "reset-icon") {
+      settings.sizes.iconOverride = null;
+    } else {
+      const token = tokens(settings).find((t) => t.id === action.id);
+      if (!token) throw new Error("\u672A\u627E\u5230\u5BF9\u5E94\u53D8\u91CF\u3002");
+      if (action.type === "reset") {
+        if (token.base) throw new Error("\u57FA\u51C6\u503C\u4E0D\u80FD\u91CD\u7F6E\u3002");
+        delete settings.overrides[token.id];
+      } else if (token.base) {
+        if (token.mode) {
+          if (typeof action.value !== "string") throw new Error("\u989C\u8272\u503C\u7C7B\u578B\u9519\u8BEF\u3002");
+          apply(settings, { type: "color-seed", mode: token.mode, family: token.group, value: action.value });
+        } else {
+          if (typeof action.value !== "number") throw new Error("\u5C3A\u5BF8\u503C\u7C7B\u578B\u9519\u8BEF\u3002");
+          apply(settings, { type: "size-seed", group: token.group === "seed" ? token.name : token.group, value: action.value });
+        }
+      } else {
+        if (typeof token.generated === "string") {
+          if (typeof action.value !== "string") throw new Error("\u989C\u8272\u503C\u7C7B\u578B\u9519\u8BEF\u3002");
+          settings.overrides[token.id] = normalizeColor(action.value);
+        } else {
+          if (typeof action.value !== "number") throw new Error("\u5C3A\u5BF8\u503C\u7C7B\u578B\u9519\u8BEF\u3002");
+          validateNumber(token.group, action.value, false);
+          if (token.name === "infinite" && action.value !== 999) throw new Error("radius-infinite \u56FA\u5B9A\u4E3A 999\u3002");
+          settings.overrides[token.id] = action.value;
+        }
+        if (equal(settings.overrides[token.id], token.generated)) delete settings.overrides[token.id];
+      }
+    }
+  }
+
+  // src/ui.ts
+  function element(selector) {
+    const result = document.querySelector(selector);
+    if (!result) throw new Error(`Missing UI element: ${selector}`);
+    return result;
+  }
+  var panels = element(".panels");
+  var viewport = element(".viewport");
+  var picker = element(".picker");
+  var notice = element(".notice");
+  var square = element(".color-square");
+  var hue = element(".hue-track input");
+  var alpha = element(".alpha-track input");
+  var channelBox = element(".channels");
+  var format = element(".format-select select");
+  var preview = window.parent === window;
+  var hostReady = preview;
+  var initializationError = null;
+  var initializationTimer;
+  var snapshot = { settings: defaults(), tokens: tokens(defaults()), existing: 0, total: 176, complete: false };
+  var tab = "color";
+  var mode = "light";
+  var expanded = /* @__PURE__ */ new Set();
+  var requestId = 0;
+  var busy = false;
+  var noticeTimer;
+  var pickerTarget = null;
+  var pickerHsv = { h: 0, s: 100, v: 100 };
+  var pickerAlpha = 1;
+  var pickerHsl = { h: 0, s: 100, l: 50 };
+  var pickerTimer;
+  var activeSquarePointer = null;
+  var pickerLayout = "";
+  var pickerFormats = /* @__PURE__ */ new Map();
+  var pickerInputBindings = /* @__PURE__ */ new Map();
+  var pendingActions = /* @__PURE__ */ new Map();
+  var inFlightRequests = /* @__PURE__ */ new Set();
+  var editTimer;
+  var recovering = false;
+  var closeRequested = false;
+  var inputBindings = /* @__PURE__ */ new Map();
+  var swatchBindings = /* @__PURE__ */ new Map();
+  var resetBindings = /* @__PURE__ */ new Map();
+  var layout = "";
+  function send(message) {
+    if (!preview && message.type === "close" && (pendingActions.size || inFlightRequests.size)) {
+      closeRequested = true;
+      flushEdits();
+      render();
+      showNotice("\u6B63\u5728\u540C\u6B65\u6700\u540E\u7684\u4FEE\u6539\uFF0C\u5B8C\u6210\u540E\u5C06\u5173\u95ED\u3002");
+      return;
+    }
+    if (!preview) {
+      window.parent.postMessage({ pluginMessage: message }, "*");
+      return;
+    }
+    if (message.type === "resize") {
+      document.documentElement.style.setProperty("--window-height", `${message.height}px`);
+      return;
+    }
+    if (message.type === "close") {
+      showNotice("\u8FD9\u662F\u6D4F\u89C8\u5668\u9884\u89C8\uFF1B\u5BFC\u5165 Figma \u540E\u53EF\u5173\u95ED\u63D2\u4EF6\u3002");
+      return;
+    }
+    if (message.type === "ready") {
+      showNotice("\u6D4F\u89C8\u5668\u9884\u89C8\uFF1A\u4E0D\u4F1A\u5199\u5165 Figma \u53D8\u91CF\u3002");
+      return;
+    }
+    const generated = message.type === "generate" || snapshot.complete;
+    snapshot = { ...snapshot, existing: generated ? 176 : 0, complete: generated };
+    if (message.type === "action") pendingActions.delete(message.requestId);
+    busy = false;
+    render();
+    if (message.type === "generate") showNotice("\u9884\u89C8\u5DF2\u751F\u6210 176 \u4E2A\u53D8\u91CF\uFF1B\u5B9E\u9645\u5199\u5165\u9700\u5728 Figma \u4E2D\u8FD0\u884C\u3002");
+  }
+  function actionTarget(action) {
+    if (action.type === "color-seed") return `${action.type}:${action.mode}:${action.family}`;
+    if (action.type === "size-seed") return `${action.type}:${action.group}`;
+    if (action.type === "token" || action.type === "reset") return `${action.type}:${action.id}`;
+    return action.type;
+  }
+  function flushEdits() {
+    clearTimeout(editTimer);
+    editTimer = void 0;
+    if (preview || inFlightRequests.size || recovering || !pendingActions.size) return;
+    const requests = [...pendingActions].map(([requestId2, action]) => ({ requestId: requestId2, action }));
+    for (const request of requests) inFlightRequests.add(request.requestId);
+    if (requests.length === 1) send({ type: "action", ...requests[0] });
+    else send({ type: "actions", requests });
+  }
+  function acknowledge(message) {
+    const ids = message.requestIds ?? (message.requestId !== void 0 ? [message.requestId] : []);
+    for (const id of ids) {
+      pendingActions.delete(id);
+      inFlightRequests.delete(id);
+    }
+  }
+  function showNotice(message, error = false) {
+    clearTimeout(noticeTimer);
+    notice.textContent = message;
+    notice.hidden = false;
+    notice.classList.toggle("error", error);
+    noticeTimer = setTimeout(() => {
+      notice.hidden = true;
+    }, error ? 7e3 : 3500);
+  }
+  function dispatch(action) {
+    if (closeRequested) {
+      showNotice("\u6B63\u5728\u540C\u6B65\u5E76\u5173\u95ED\u63D2\u4EF6\uFF0C\u8BF7\u7A0D\u5019\u3002");
+      return;
+    }
+    if (!hostReady) {
+      showNotice("\u63D2\u4EF6\u5C1A\u672A\u6210\u529F\u521D\u59CB\u5316\uFF0C\u8BF7\u5148\u5904\u7406\u9519\u8BEF\u63D0\u793A\u5E76\u91CD\u65B0\u8FD0\u884C\u3002", true);
+      return;
+    }
+    try {
+      const draft = cloneSettings(snapshot.settings);
+      apply(draft, action);
+      const value = action.type === "color-seed" ? draft.colors[action.mode][action.family] : action.type === "size-seed" ? action.value : void 0;
+      if (value !== void 0 && value === actionValue(action)) return;
+      snapshot.settings = draft;
+      snapshot.tokens = tokens(draft);
+      const id = ++requestId;
+      let previous;
+      for (const entry of pendingActions) previous = entry;
+      if (previous && !inFlightRequests.has(previous[0]) && actionTarget(previous[1]) === actionTarget(action)) pendingActions.delete(previous[0]);
+      pendingActions.set(id, action);
+      if (preview) send({ type: "action", action, requestId: id });
+      else {
+        render();
+        if (editTimer === void 0 && !inFlightRequests.size && !recovering) editTimer = setTimeout(flushEdits, 16);
+      }
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+  function asset(name) {
+    const template = element(`#${name}`);
+    return template.content.cloneNode(true);
+  }
+  function button(text, className, click) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = text;
+    b.className = className;
+    b.onclick = click;
+    return b;
+  }
+  function currentToken(id) {
+    const token = snapshot.tokens.find((t) => t.id === id);
+    if (!token) throw new Error("\u672A\u627E\u5230\u5BF9\u5E94\u53D8\u91CF\u3002");
+    return token;
+  }
+  function actionValue(action) {
+    if (action.type === "color-seed") return snapshot.settings.colors[action.mode][action.family];
+    if (action.type === "token") return currentToken(action.id).value;
+    if (action.type === "size-seed") {
+      if (action.group === "size-unit") return snapshot.settings.sizes.sizeUnit;
+      if (action.group === "size-step") return snapshot.settings.sizes.sizeStep;
+      return baseValue(action.group);
+    }
+    throw new Error("\u8F93\u5165\u6846\u7ED1\u5B9A\u4E86\u4E0D\u652F\u6301\u7684\u64CD\u4F5C\u3002");
+  }
+  function input(value, label, action, numericGroup, base = true, readonly = false) {
+    const i = document.createElement("input");
+    i.className = "value-input";
+    i.type = "text";
+    i.value = String(value);
+    i.setAttribute("aria-label", label);
+    i.autocomplete = "off";
+    i.spellcheck = false;
+    i.readOnly = readonly;
+    i.disabled = !hostReady;
+    inputBindings.set(i, action);
+    if (numericGroup) {
+      i.inputMode = "numeric";
+      i.setAttribute("role", "spinbutton");
+      i.setAttribute("aria-valuenow", String(value));
+    }
+    const commit = () => {
+      try {
+        let v;
+        if (numericGroup) {
+          if (!/^-?\d+$/.test(i.value.trim())) throw new Error("\u8BF7\u8F93\u5165\u6574\u6570\u3002");
+          v = Number(i.value);
+          validateNumber(numericGroup, v, base);
+        } else {
+          v = normalizeColor(i.value);
+          if (action.type === "color-seed" && v.length === 9) throw new Error("\u989C\u8272\u57FA\u51C6\u503C\u4E0D\u652F\u6301\u900F\u660E\u5EA6\uFF0C\u8BF7\u8BBE\u4E3A 100%\u3002");
+        }
+        i.setAttribute("aria-invalid", "false");
+        i.dataset.editing = "false";
+        if (String(v) === String(actionValue(action))) {
+          i.value = String(v);
+          return;
+        }
+        if (action.type === "color-seed" && typeof v === "string") dispatch({ ...action, value: v });
+        else if (action.type === "size-seed" && typeof v === "number") dispatch({ ...action, value: v });
+        else if (action.type === "token") dispatch({ ...action, value: v });
+      } catch (error) {
+        i.setAttribute("aria-invalid", "true");
+        showNotice(error instanceof Error ? error.message : String(error), true);
+      }
+    };
+    i.addEventListener("focus", () => i.select());
+    i.addEventListener("click", () => i.select());
+    i.addEventListener("input", () => {
+      if (readonly) return;
+      i.dataset.editing = "true";
+      try {
+        if (numericGroup) {
+          if (!/^-?\d+$/.test(i.value.trim())) return;
+          validateNumber(numericGroup, Number(i.value), base);
+        } else {
+          const raw = i.value.trim().replace(/^#/, "");
+          if (raw.length !== 6 && raw.length !== 8) return;
+          normalizeColor(i.value);
+        }
+        commit();
+      } catch (error) {
+        i.setAttribute("aria-invalid", "true");
+        showNotice(error instanceof Error ? error.message : String(error), true);
+      }
+    });
+    i.addEventListener("change", commit);
+    i.addEventListener("blur", () => {
+      if (i.dataset.editing === "true" && i.getAttribute("aria-invalid") !== "true") commit();
+      if (i.getAttribute("aria-invalid") === "true") {
+        i.value = String(actionValue(action));
+        i.setAttribute("aria-invalid", "false");
+        i.dataset.editing = "false";
+      }
+    });
+    i.addEventListener("keydown", (event) => {
+      if (readonly) return;
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commit();
+        i.blur();
+      } else if (event.key === "Escape") {
+        i.value = String(actionValue(action));
+        i.setAttribute("aria-invalid", "false");
+        i.dataset.editing = "false";
+        i.blur();
+      } else if (numericGroup && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        event.preventDefault();
+        const n = Number(i.value);
+        if (!Number.isFinite(n)) {
+          showNotice("\u8BF7\u8F93\u5165\u6709\u6548\u6574\u6570\u540E\u518D\u8C03\u6574\u3002", true);
+          return;
+        }
+        i.dataset.editing = "true";
+        i.value = String(n + (event.key === "ArrowUp" ? 1 : -1) * (event.shiftKey ? 10 : 1));
+        commit();
+      }
+    });
+    return i;
+  }
+  function swatch(value, action, label) {
+    const b = button("", "swatch", () => openPicker(String(actionValue(action)), action, b));
+    b.disabled = !hostReady;
+    swatchBindings.set(b, action);
+    b.setAttribute("aria-label", `${label}\u989C\u8272\u9009\u62E9\u5668`);
+    const span = document.createElement("span");
+    span.style.background = value;
+    b.dataset.color = value;
+    b.append(span);
+    return b;
+  }
+  function tokenRow(t) {
+    const row = document.createElement("div");
+    row.className = `token-row ${t.mode ? "" : "number-row"}`;
+    const label = document.createElement("div");
+    label.className = "token-label";
+    const name = document.createElement("span");
+    name.className = "token-name";
+    name.textContent = t.collection === "radius" ? `radius-${t.name}` : t.label;
+    label.append(name);
+    if (!t.base && t.name !== "infinite") {
+      const reset = button("\u91CD\u7F6E", "reset", () => dispatch({ type: "reset", id: t.id }));
+      resetBindings.set(reset, t.id);
+      reset.hidden = !t.modified;
+      label.append(reset);
+    }
+    const field = document.createElement("div");
+    field.className = "field";
+    const action = { type: "token", id: t.id, value: t.value };
+    field.append(input(t.value, name.textContent, action, t.mode ? void 0 : t.group, t.base, t.name === "infinite"));
+    if (typeof t.value === "string") field.append(swatch(t.value, action, name.textContent));
+    row.append(label, field);
+    return row;
+  }
+  function expandButton(label, key, subtitle) {
+    const b = button("", "expand", () => {
+      if (expanded.has(key)) expanded.delete(key);
+      else expanded.add(key);
+      closePicker();
+      render();
+      resize();
+    });
+    b.setAttribute("aria-expanded", String(expanded.has(key)));
+    b.setAttribute("aria-label", `${label}\u5C55\u5F00\u6536\u8D77`);
+    const arrow = document.createElement("span");
+    arrow.className = "arrow";
+    arrow.append(asset(tab === "size" ? "arrow-size" : expanded.size ? "arrow-expanded" : "arrow-color"));
+    const title = document.createElement("span");
+    title.className = "head-title";
+    title.textContent = label;
+    if (subtitle) {
+      const sub = document.createElement("span");
+      sub.className = "head-subtitle";
+      sub.textContent = subtitle;
+      title.append(sub);
+    }
+    b.append(arrow, title);
+    return b;
+  }
+  function colorPanel(family, label) {
+    const key = `${mode}:${family}`, panel = document.createElement("div");
+    panel.className = `panel color-panel ${expanded.has(key) ? "expanded" : ""}`;
+    const head = document.createElement("div");
+    head.className = "panel-head";
+    const field = document.createElement("div");
+    field.className = "field";
+    const value = snapshot.settings.colors[mode][family];
+    const action = { type: "color-seed", mode, family, value };
+    field.append(input(value, `${label}\u57FA\u51C6\u503C`, action), swatch(value, action, `${label}\u57FA\u51C6\u503C`));
+    head.append(expandButton(`${label}\u57FA\u51C6\u503C`, key), field);
+    panel.append(head);
+    if (expanded.has(key)) {
+      const list = document.createElement("div");
+      list.className = "token-list";
+      snapshot.tokens.filter((t) => t.group === family && t.mode === mode).forEach((t) => list.append(tokenRow(t)));
+      panel.append(list);
+    }
+    return panel;
+  }
+  function baseValue(group) {
+    const s = snapshot.settings.sizes;
+    return { "font-size": s.fontSize, "icon-size": s.iconOverride ?? s.fontSize + 4, "font-weight": s.fontWeight, radius: s.radius, "control-height": s.controlHeight, border: s.border, padding: s.sizeUnit }[group];
+  }
+  function sizePanel(group, label, baseLabel) {
+    const key = `size:${group}`, panel = document.createElement("div");
+    panel.className = `panel size-panel ${expanded.has(key) ? "expanded" : ""}`;
+    const head = document.createElement("div");
+    head.className = "panel-head";
+    if (group === "border") {
+      const title = document.createElement("div");
+      title.className = "head-title";
+      title.style.paddingLeft = "14px";
+      title.textContent = label;
+      const sub = document.createElement("span");
+      sub.className = "head-subtitle";
+      sub.textContent = baseLabel;
+      title.append(sub);
+      head.append(title);
+    } else head.append(expandButton(label, key, baseLabel));
+    if (group !== "padding") {
+      const field = document.createElement("div");
+      field.className = "field";
+      if (group === "icon-size") {
+        const reset = button("\u91CD\u7F6E", "reset", () => dispatch({ type: "reset-icon" }));
+        reset.hidden = snapshot.settings.sizes.iconOverride === null;
+        resetBindings.set(reset, "icon");
+        field.append(reset);
+      }
+      field.append(input(baseValue(group), label, { type: "size-seed", group, value: baseValue(group) }, group));
+      head.append(field);
+    }
+    panel.append(head);
+    if (group === "padding") {
+      for (const seed of ["size-unit", "size-step"]) {
+        const row = document.createElement("div");
+        row.className = "seed-row";
+        const text = document.createElement("span");
+        text.textContent = seed === "size-unit" ? "\u57FA\u7840\u5355\u4F4D size-unit" : "\u6B65\u957F\u5355\u4F4D size-step";
+        const value = seed === "size-unit" ? snapshot.settings.sizes.sizeUnit : snapshot.settings.sizes.sizeStep;
+        row.append(text, input(value, seed, { type: "size-seed", group: seed, value }, seed));
+        panel.append(row);
+      }
+    }
+    if (expanded.has(key)) {
+      const list = document.createElement("div");
+      list.className = "token-list";
+      snapshot.tokens.filter((t) => t.group === group).forEach((t) => list.append(tokenRow(t)));
+      panel.append(list);
+      if (group === "control-height") {
+        const padding = sizePanel("padding", "\u95F4\u8DDD", "size-unit / size-step");
+        padding.classList.add("padding-panel");
+        panel.append(padding);
+      }
+    }
+    return panel;
+  }
+  function render() {
+    const focused = document.activeElement instanceof HTMLInputElement && document.activeElement.closest(".panels") ? document.activeElement : null;
+    const focusLabel = focused?.getAttribute("aria-label"), selection = focused ? [focused.selectionStart, focused.selectionEnd] : null;
+    const draftValue = focused?.value, editing = focused?.dataset.editing === "true", invalid = focused?.getAttribute("aria-invalid");
+    const oldScroll = viewport.scrollTop;
+    const nextLayout = `${tab}:${mode}:${[...expanded].sort().join(",")}`;
+    const rebuild = layout !== nextLayout;
+    if (rebuild) {
+      layout = nextLayout;
+      inputBindings.clear();
+      swatchBindings.clear();
+      resetBindings.clear();
+      panels.replaceChildren();
+      panels.classList.toggle("has-expanded", [...expanded].some((key) => key.startsWith(`${mode}:`)));
+      if (tab === "color") families.forEach((f) => panels.append(colorPanel(f.id, f.label)));
+      else sizeGroups.filter((g) => g.id !== "padding").forEach((g) => panels.append(sizePanel(g.id, g.label, g.base)));
+    }
+    for (const [i, action] of inputBindings) {
+      i.disabled = !hostReady || closeRequested;
+      const value = String(actionValue(action));
+      if (i.dataset.editing !== "true" && i.value !== value) {
+        const previous = i.value, start = i.selectionStart, end = i.selectionEnd;
+        i.value = value;
+        if (document.activeElement === i) {
+          const atEnd = start === previous.length && end === previous.length;
+          const all = start === 0 && end === previous.length;
+          i.setSelectionRange(atEnd ? value.length : start, atEnd || all ? value.length : end);
+        }
+      }
+      if (i.hasAttribute("aria-valuenow") && i.getAttribute("aria-valuenow") !== value) i.setAttribute("aria-valuenow", value);
+    }
+    for (const [b, action] of swatchBindings) {
+      b.disabled = !hostReady || closeRequested;
+      const span = b.firstElementChild;
+      const value = String(actionValue(action));
+      if (span instanceof HTMLElement && b.dataset.color !== value) {
+        span.style.background = value;
+        b.dataset.color = value;
+      }
+    }
+    for (const [b, id] of resetBindings) {
+      b.disabled = !hostReady || closeRequested;
+      b.hidden = id === "icon" ? snapshot.settings.sizes.iconOverride === null : !currentToken(id).modified;
+    }
+    element(".mode-wrap").hidden = tab !== "color";
+    document.querySelectorAll("[data-tab]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.tab === tab);
+      b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+    });
+    document.querySelectorAll("[data-mode]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.mode === mode);
+      b.setAttribute("aria-selected", String(b.dataset.mode === mode));
+    });
+    const generate = element(".generate");
+    generate.disabled = !hostReady || busy || closeRequested || snapshot.complete || pendingActions.size > 0;
+    element(".cancel").disabled = closeRequested;
+    generate.title = !hostReady ? initializationError ?? "\u6B63\u5728\u8BFB\u53D6 Figma \u53D8\u91CF\uFF1B\u521D\u59CB\u5316\u6210\u529F\u540E\u53EF\u64CD\u4F5C" : snapshot.complete ? "\u5168\u90E8\u53D8\u91CF\u5DF2\u751F\u6210\uFF0C\u4FEE\u6539\u4F1A\u5B9E\u65F6\u540C\u6B65" : `\u751F\u6210\u5168\u90E8\u53D8\u91CF\uFF08\u5F53\u524D\u5DF2\u6709 ${snapshot.existing}/${snapshot.total}\uFF09`;
+    viewport.scrollTop = oldScroll;
+    if (rebuild && focusLabel) {
+      const next = [...panels.querySelectorAll("input")].find((i) => i.getAttribute("aria-label") === focusLabel);
+      if (next && editing && draftValue !== void 0) {
+        next.value = draftValue;
+        next.dataset.editing = "true";
+        if (invalid) next.setAttribute("aria-invalid", invalid);
+      }
+      next?.focus({ preventScroll: true });
+      if (next && selection) {
+        const atEnd = selection[0] === draftValue?.length && selection[1] === draftValue?.length;
+        const selectedAll = selection[0] === 0 && selection[1] === draftValue?.length;
+        next.setSelectionRange(atEnd ? next.value.length : selection[0], atEnd || selectedAll ? next.value.length : selection[1]);
+      }
+    }
+  }
+  function resize() {
+    const open = [...expanded].some((k) => k.startsWith(tab === "color" ? `${mode}:` : "size:"));
+    send({ type: "resize", height: open ? 764 : tab === "color" ? 580 : 626 });
+  }
+  function closePicker() {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && channelBox.contains(focused) && focused.dataset.editing === "true") {
+      focused.dispatchEvent(new Event("change"));
+    }
+    finishSquareDrag();
+    if (pickerTimer) {
+      clearTimeout(pickerTimer);
+      commitPicker();
+    }
+    picker.hidden = true;
+    pickerTarget = null;
+  }
+  function pickerGroup() {
+    if (pickerTarget?.type === "color-seed") return pickerTarget.family;
+    if (pickerTarget?.type === "token") return currentToken(pickerTarget.id).group;
+    throw new Error("\u989C\u8272\u9009\u62E9\u5668\u6CA1\u6709\u7ED1\u5B9A\u989C\u8272\u53D8\u91CF\u3002");
+  }
+  function setPickerHsv(value) {
+    pickerHsv = value;
+    pickerHsl = hexToHsl(hsvToHex(value));
+  }
+  function openPicker(value, action, anchor) {
+    if (!picker.hidden && JSON.stringify(pickerTarget) === JSON.stringify(action)) {
+      closePicker();
+      return;
+    }
+    if (!picker.hidden) closePicker();
+    pickerTarget = action;
+    setPickerHsv(hexToHsv(value.slice(0, 7)));
+    pickerAlpha = channels(value)[3];
+    const group = pickerGroup();
+    format.value = pickerFormats.get(group) ?? (group === "gray" ? "HSL" : "HSB");
+    for (const i of pickerInputBindings.keys()) {
+      i.dataset.editing = "false";
+      i.setAttribute("aria-invalid", "false");
+    }
+    picker.hidden = false;
+    const bounds = anchor.getBoundingClientRect(), height = picker.offsetHeight;
+    const viewHeight = preview ? parseInt(getComputedStyle(document.documentElement).getPropertyValue("--window-height")) || window.innerHeight : window.innerHeight;
+    picker.style.left = `${Math.max(8, Math.min(window.innerWidth - 264, bounds.right - 256))}px`;
+    picker.style.top = `${Math.max(8, Math.min(viewHeight - height - 8, bounds.bottom + 8))}px`;
+    updatePicker();
+  }
+  function pickerColor() {
+    const color = hsvToHex(pickerHsv);
+    const [r, g, b] = channels(color);
+    return fromChannels(r, g, b, pickerAlpha);
+  }
+  function pickerValues() {
+    if (format.value === "HSB") return [pickerHsv.h, pickerHsv.s, pickerHsv.v];
+    if (format.value === "HSL") return [pickerHsl.h, pickerHsl.s, pickerHsl.l];
+    return channels(pickerColor()).slice(0, 3);
+  }
+  function pickerInput(label, read, write, maximum) {
+    const i = document.createElement("input");
+    i.setAttribute("aria-label", label);
+    i.onfocus = () => i.select();
+    pickerInputBindings.set(i, read);
+    if (maximum !== void 0) {
+      i.inputMode = "decimal";
+      i.setAttribute("role", "spinbutton");
+      i.setAttribute("aria-valuemin", "0");
+      i.setAttribute("aria-valuemax", String(maximum));
+    }
+    const commit = () => {
+      if (i.readOnly) return;
+      try {
+        if (maximum !== void 0 && (!i.value.trim() || !Number.isFinite(Number(i.value)) || Number(i.value) < 0 || Number(i.value) > maximum)) {
+          throw new Error(`\u8BF7\u8F93\u5165 0\u2013${maximum} \u4E4B\u95F4\u7684\u6570\u503C\u3002`);
+        }
+        i.dataset.editing = "false";
+        i.setAttribute("aria-invalid", "false");
+        write(i.value);
+      } catch (error) {
+        i.dataset.editing = "false";
+        i.setAttribute("aria-invalid", "true");
+        showNotice(error instanceof Error ? error.message : String(error), true);
+        updatePicker();
+      }
+    };
+    i.oninput = () => {
+      i.dataset.editing = "true";
+    };
+    i.onchange = commit;
+    i.onblur = () => {
+      if (i.dataset.editing === "true") commit();
+    };
+    i.onkeydown = (event) => {
+      if (i.readOnly) return;
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commit();
+      } else if (event.key === "Escape") {
+        i.dataset.editing = "false";
+        i.setAttribute("aria-invalid", "false");
+        i.value = read();
+      } else if (maximum !== void 0 && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        event.preventDefault();
+        if (!i.value.trim() || !Number.isFinite(Number(i.value))) {
+          commit();
+          return;
+        }
+        const step = (event.shiftKey ? 10 : 1) * (event.key === "ArrowUp" ? 1 : -1);
+        i.value = String(Math.max(0, Math.min(maximum, Number(i.value) + step)));
+        commit();
+      }
+    };
+    return i;
+  }
+  function updatePicker() {
+    square.style.setProperty("--hue", hsvToHex({ h: pickerHsv.h, s: 100, v: 100 }));
+    const handle = element(".square-handle");
+    handle.style.left = `${pickerHsv.s}%`;
+    handle.style.top = `${100 - pickerHsv.v}%`;
+    square.setAttribute("aria-valuetext", `\u9971\u548C\u5EA6 ${Math.round(pickerHsv.s)}%\uFF0C\u4EAE\u5EA6 ${Math.round(pickerHsv.v)}%`);
+    hue.value = String(pickerHsv.h);
+    alpha.value = String(pickerAlpha * 100);
+    alpha.disabled = pickerTarget?.type === "color-seed" || pickerTarget?.type === "token" && currentToken(pickerTarget.id).base;
+    alpha.title = alpha.disabled ? "\u57FA\u51C6\u8272\u900F\u660E\u5EA6\u56FA\u5B9A\u4E3A 100%" : "";
+    picker.style.setProperty("--picker-color", hsvToHex(pickerHsv));
+    if (pickerLayout !== format.value) {
+      pickerLayout = format.value;
+      pickerInputBindings.clear();
+      channelBox.replaceChildren();
+      if (format.value === "HEX") {
+        const i2 = pickerInput("HEX", () => pickerColor().slice(1, 7), (value) => {
+          setPickerHsv(hexToHsv(normalizeColor(value).slice(0, 7)));
+          commitPicker();
+        });
+        i2.className = "hex-field";
+        channelBox.append(i2);
+      } else {
+        const labels = format.value === "HSB" ? ["H", "S", "B"] : format.value === "HSL" ? ["H", "S", "L"] : ["R", "G", "B"];
+        labels.forEach((label, index) => {
+          const maximum = format.value === "RGB" ? 255 : index === 0 ? 360 : 100;
+          channelBox.append(pickerInput(label, () => String(Math.round(pickerValues()[index])), (value) => {
+            const n = Number(value);
+            if (format.value === "HSB") {
+              const component = ["h", "s", "v"][index];
+              setPickerHsv({ ...pickerHsv, [component]: n });
+            } else if (format.value === "HSL") {
+              const component = ["h", "s", "l"][index];
+              pickerHsl = { ...pickerHsl, [component]: n };
+              pickerHsv = { ...hexToHsv(hslToHex(pickerHsl)), h: pickerHsl.h };
+            } else {
+              const values = channels(pickerColor());
+              values[index] = n;
+              setPickerHsv(hexToHsv(fromChannels(values[0], values[1], values[2])));
+            }
+            commitPicker();
+          }, maximum));
+        });
+      }
+      const opacity = document.createElement("div");
+      opacity.className = "opacity-field";
+      const i = pickerInput("\u4E0D\u900F\u660E\u5EA6", () => String(Math.round(pickerAlpha * 100)), (value) => {
+        pickerAlpha = Number(value) / 100;
+        commitPicker();
+      }, 100);
+      const percent = document.createElement("span");
+      percent.textContent = "%";
+      opacity.append(i, percent);
+      channelBox.append(opacity);
+    }
+    for (const [i, read] of pickerInputBindings) {
+      i.readOnly = i.getAttribute("aria-label") === "\u4E0D\u900F\u660E\u5EA6" && alpha.disabled;
+      if (i.dataset.editing !== "true") i.value = read();
+      if (i.hasAttribute("aria-valuemax")) i.setAttribute("aria-valuenow", read());
+    }
+  }
+  function commitPicker() {
+    clearTimeout(pickerTimer);
+    pickerTimer = void 0;
+    if (!pickerTarget) return;
+    const value = pickerColor();
+    if (pickerTarget.type === "color-seed" || pickerTarget.type === "token") dispatch({ ...pickerTarget, value });
+    updatePicker();
+  }
+  function schedulePickerCommit() {
+    if (!pickerTimer) pickerTimer = setTimeout(commitPicker, 40);
+  }
+  function moveSquarePointer(event) {
+    const r = square.getBoundingClientRect();
+    setPickerHsv({
+      ...pickerHsv,
+      s: Math.max(0, Math.min(100, (event.clientX - r.left) / r.width * 100)),
+      v: Math.max(0, Math.min(100, (1 - (event.clientY - r.top) / r.height) * 100))
+    });
+    updatePicker();
+    schedulePickerCommit();
+  }
+  function finishSquareDrag() {
+    const id = activeSquarePointer;
+    activeSquarePointer = null;
+    if (id === null) return;
+    if (square.hasPointerCapture(id)) square.releasePointerCapture(id);
+    commitPicker();
+  }
+  square.addEventListener("pointerdown", (event) => {
+    if (picker.hidden || !pickerTarget || event.button !== 0 || !event.isPrimary || activeSquarePointer !== null) return;
+    event.preventDefault();
+    square.focus({ preventScroll: true });
+    activeSquarePointer = event.pointerId;
+    square.setPointerCapture(event.pointerId);
+    moveSquarePointer(event);
+  });
+  square.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== activeSquarePointer) return;
+    if (event.pointerType === "mouse" && !(event.buttons & 1)) {
+      finishSquareDrag();
+      return;
+    }
+    moveSquarePointer(event);
+  });
+  window.addEventListener("pointerup", (event) => {
+    if (event.pointerId !== activeSquarePointer) return;
+    moveSquarePointer(event);
+    finishSquareDrag();
+  }, true);
+  window.addEventListener("pointercancel", (event) => {
+    if (event.pointerId === activeSquarePointer) finishSquareDrag();
+  }, true);
+  square.addEventListener("lostpointercapture", (event) => {
+    if (event.pointerId === activeSquarePointer) finishSquareDrag();
+  });
+  window.addEventListener("blur", finishSquareDrag);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) finishSquareDrag();
+  });
+  square.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 10 : 1;
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") setPickerHsv({ ...pickerHsv, s: Math.max(0, Math.min(100, pickerHsv.s + (event.key === "ArrowRight" ? step : -step))) });
+    else setPickerHsv({ ...pickerHsv, v: Math.max(0, Math.min(100, pickerHsv.v + (event.key === "ArrowUp" ? step : -step))) });
+    commitPicker();
+  });
+  hue.oninput = () => {
+    setPickerHsv({ ...pickerHsv, h: Number(hue.value) });
+    updatePicker();
+    schedulePickerCommit();
+  };
+  hue.onchange = commitPicker;
+  alpha.oninput = () => {
+    pickerAlpha = Number(alpha.value) / 100;
+    updatePicker();
+    schedulePickerCommit();
+  };
+  alpha.onchange = commitPicker;
+  format.onchange = () => {
+    if (pickerTarget) pickerFormats.set(pickerGroup(), format.value);
+    updatePicker();
+  };
+  element(".eyedropper").onclick = async () => {
+    const constructor = window.EyeDropper;
+    if (!constructor) {
+      showNotice("\u5F53\u524D Figma \u73AF\u5883\u4E0D\u652F\u6301\u5C4F\u5E55\u53D6\u8272\uFF0C\u8BF7\u4F7F\u7528\u8272\u677F\u6216\u8F93\u5165 HEX\u3002", true);
+      return;
+    }
+    try {
+      const result = await new constructor().open();
+      setPickerHsv(hexToHsv(result.sRGBHex));
+      commitPicker();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      showNotice(error instanceof Error ? error.message : String(error), true);
+    }
+  };
+  document.addEventListener("pointerdown", (event) => {
+    if (event.target instanceof Element && !event.target.closest(".picker") && !event.target.closest(".swatch")) closePicker();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closePicker();
+  });
+  element(".cancel").onclick = () => {
+    closePicker();
+    send({ type: "close" });
+  };
+  element(".generate").onclick = () => {
+    if (busy || pendingActions.size) return;
+    const invalid = panels.querySelector('input[aria-invalid="true"]');
+    if (invalid) {
+      invalid.focus();
+      showNotice("\u8BF7\u5148\u4FEE\u6B63\u8F93\u5165\u503C\u518D\u751F\u6210\u53D8\u91CF\u3002", true);
+      return;
+    }
+    busy = true;
+    render();
+    send({ type: "generate" });
+  };
+  document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => {
+    tab = b.dataset.tab === "size" ? "size" : "color";
+    viewport.scrollTop = 0;
+    closePicker();
+    render();
+    resize();
+  });
+  document.querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => {
+    mode = b.dataset.mode === "dark" ? "dark" : "light";
+    viewport.scrollTop = 0;
+    closePicker();
+    render();
+    resize();
+  });
+  window.addEventListener("message", (event) => {
+    if (!["snapshot", "error", "generated"].includes(event.data?.pluginMessage?.type)) return;
+    const message = event.data.pluginMessage;
+    clearTimeout(initializationTimer);
+    if (message.type === "snapshot") {
+      if (initializationError) notice.hidden = true;
+      initializationError = null;
+      hostReady = true;
+      acknowledge(message);
+      recovering = false;
+      snapshot = message.snapshot;
+      if (pendingActions.size) {
+        for (const action of pendingActions.values()) apply(snapshot.settings, action);
+        snapshot.tokens = tokens(snapshot.settings);
+      }
+      busy = false;
+      render();
+      if (closeRequested && !pendingActions.size && !inFlightRequests.size) send({ type: "close" });
+      else flushEdits();
+    } else if (message.type === "error") {
+      acknowledge(message);
+      closeRequested = false;
+      if (!hostReady) initializationError = message.message;
+      busy = false;
+      render();
+      showNotice(message.message, true);
+      if (!hostReady) clearTimeout(noticeTimer);
+      if (message.requestId !== void 0 || message.requestIds?.length) {
+        recovering = true;
+        send({ type: "ready" });
+      }
+    } else showNotice(`\u5DF2\u751F\u6210\u5168\u90E8 ${message.count} \u4E2A\u53D8\u91CF\uFF0C\u4FEE\u6539\u5C06\u5B9E\u65F6\u540C\u6B65\u3002`);
+  });
+  if (!preview) {
+    initializationTimer = setTimeout(() => {
+      initializationError = "\u672A\u80FD\u5728 5 \u79D2\u5185\u6536\u5230 Figma \u7684\u521D\u59CB\u5316\u7ED3\u679C\uFF0C\u8BF7\u5173\u95ED\u5E76\u91CD\u65B0\u8FD0\u884C\u63D2\u4EF6\uFF1B\u82E5\u4ECD\u6709\u6B64\u63D0\u793A\uFF0C\u8BF7\u67E5\u770B\u63D2\u4EF6\u63A7\u5236\u53F0\u9519\u8BEF\u3002";
+      render();
+      showNotice(initializationError, true);
+      clearTimeout(noticeTimer);
+    }, 5e3);
+  }
+  render();
+  resize();
+  send({ type: "ready" });
+})();
